@@ -1,29 +1,25 @@
 [![Compile Handler](https://github.com/himbeles/mac-device-connect-daemon/workflows/Compile%20Handler/badge.svg?branch=master)](https://github.com/himbeles/mac-device-connect-daemon/actions?query=workflow%3A%22Compile+Handler%22)
 
-# Run shell script or executable triggered by device detection on a Mac
+# Automatically switch Yubikey serial number in GPG
 
-This tutorial describes how to run an arbitrary executable or shell script triggered by the connection of an external device (usb/thunderbolt) to a Mac.
+Do you also use 2 Yubikeys with private key copies and are annoyed by this GPG dialogue: "Please insert card with serial number"? Then this little daemon could be right for you :).
 
-This relies on Apple's `IOKit` library for device detection and a daemon for running the desired executable.
-For the daemon to not be triggered repeatedly after connecting the device, a special stream handler (created by [Ford Parsons](https://github.com/snosrap/xpc_set_event_stream_handler/blob/master/xpc_set_event_stream_handler/main.m)) is used to "consume" the `com.apple.iokit.matching` event, as explained [here](https://github.com/snosrap/xpc_set_event_stream_handler).
-
-For example, this can be used to spoof the MAC address of an ethernet adapter when it is connected to the mac.
-The setup is explained using the MAC spoofing scenario example files in `example-spoof-MAC` but can be generalized to arbitrary executables and devices.
-
+This daemon will execute a small bash script, once your Yubikey is plugged in. The bash script will delete your private keys for your specified mail address on your macbook and restart GPG and SSH agents. This will get rid of this anoying "Please insert card with serial number" dialogue of GPG. 
+The implementation is based on [himbeles mac-device-connect-daemon](https://github.com/himbeles/mac-device-connect-daemon) and on a [stack overflow post](https://security.stackexchange.com/questions/154702/gpg-encryption-subkey-on-multiple-smart-cards-issue).
 
 ## Put your shell script or executable into place
 
-Adapt the shell script `spoofmac.sh` to your needs and
+Adapt the `{{USER}}` and `{{MAIL}}` in shell script `switch-yubikey/switchyubikey.sh` to your needs and
 make it executable:
 
 ```
-sudo chmod 755 spoofmac.sh
+chmod 700 switchyubikey.sh
 ```
 
 Then move it into `/usr/local/bin`, or some other directory:
 
 ```
-cp spoofmac.sh /usr/local/bin/
+cp switchyubikey.sh /usr/local/bin/
 ```
 
 ## Building the stream handler
@@ -46,11 +42,13 @@ This uses a Github `macos-latest` machine.
 
 ## Setup the daemon
 
-The plist file `com.spoofmac.plist` contains the properties of the daemon that will run the executable on device connect trigger.
+The plist file `com.switchyubikey.plist` contains the properties of the daemon that will run the executable on device connect trigger.
 
 It contains information for identifying the device you want to base your trigger on, like `idVendor`, `idProduct`, `IOProviderClass`. These can be figured out in the `System Information` App on your mac.
 
-![Screenshot System Information](example-spoof-MAC/screenshot-system-info.png)
+Make sure that you use the right `idProduct` for your Yubikey. The id in this `com.switchyubikey.plist` is based on a Yubikey 5C NFC.
+
+![Screenshot System Information](switch-yubikey/screenshot-system-info.png)
 
 Convert the hex identifiers to integers before inserting into the plist file (for example using `int(0x8086)` in python).
 
@@ -61,18 +59,10 @@ The other relevant entry in the plist file is the location of `xpc_set_event_str
 Other entries include the location of standard output (log) files and the executing user.
 
 
-Since MAC spoofing requires root privileges, we put `com.spoofmac.plist` into `/Library/LaunchDaemons`:
+Since this script does not require root privileges, we put `com.switchyubikey.plist` into `~/Library/LaunchAgents`:
 
 ```
-cp com.spoofmac.plist /Library/LaunchDaemons/
-```
-
-not into a `LaunchAgents` folder. Launch agents ignore the `UserName` argument.
-
-Insure that the owner of the file is `root`:
-
-```
-sudo chown root:wheel /Library/LaunchDaemons/com.spoofmac.plist
+cp com.switchyubikey.plist ~/Library/LaunchAgents/
 ```
 
 ## Launch the daemon
@@ -80,15 +70,10 @@ sudo chown root:wheel /Library/LaunchDaemons/com.spoofmac.plist
 Activate the daemon:
 
 ```
-launchctl load /Library/LaunchDaemons/com.spoofmac.plist
+launchctl load ~/Library/LaunchAgents/com.switchyubikey.plist
 ```
 
 and you are good to go.
 
 
 Unloading is done using `launchctl unload`.
-
-## Support me
-If you like this tutorial and code and you would like to support me,
-
-<a href="https://www.buymeacoffee.com/lri" target="_blank"><img width="120" src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee"></a>
